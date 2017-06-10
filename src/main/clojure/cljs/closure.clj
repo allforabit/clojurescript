@@ -1109,6 +1109,13 @@
                source)))
          sources)})))
 
+(defn modules->module-graph [modules]
+  (let [ret {:cljs-base []}]
+    (reduce-kv
+      (fn [ret k {:keys [depends-on] :or {depends-on []}}]
+        (assoc ret k (into [:cljs-base] depends-on)))
+      ret modules)))
+
 (defn build-modules
   "Given a list of IJavaScript sources in dependency order and compiler options
    return a dependency sorted list of module name / description tuples. The

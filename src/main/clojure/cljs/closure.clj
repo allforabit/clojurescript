@@ -1109,6 +1109,19 @@
                source)))
          sources)})))
 
+(defn modules->module-infos [modules sources]
+  (let [module-infos (reduce-kv
+                        (fn [ret k {:keys [entries]}]
+                          (assoc ret k (into [] (map (comp name comp/munge)) entries)))
+                        {:cljs-base []} modules)
+        all-entries  (into #{} (apply concat (vals module-infos)))
+        sources'     (remove
+                       (fn [source]
+                         (some all-entries (:provides source)))
+                       sources)]
+    (assoc module-infos
+      :cljs-base (into [] (mapcat :provides sources')))))
+
 (defn modules->module-graph [modules]
   (let [ret {:cljs-base []}]
     (reduce-kv

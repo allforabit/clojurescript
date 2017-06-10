@@ -1109,18 +1109,16 @@
                source)))
          sources)})))
 
-(defn modules->module-infos [modules sources]
-  (let [module-infos (reduce-kv
-                        (fn [ret k {:keys [entries]}]
-                          (assoc ret k (into [] (map (comp name comp/munge)) entries)))
-                        {:cljs-base []} modules)
-        all-entries  (into #{} (apply concat (vals module-infos)))
-        sources'     (remove
-                       (fn [source]
-                         (some all-entries (:provides source)))
-                       sources)]
-    (assoc module-infos
-      :cljs-base (into [] (mapcat :provides sources')))))
+(defn modules->module-uris [modules sources {:keys [optimizations] :as opts}]
+  (case optimizations
+    :none
+    {}
+    :advanced
+    (reduce-kv
+      (fn [ret k {:keys [output-to]}]
+        (assoc ret k [output-to]))
+      {:cljs-base [(str (util/output-directory opts) File/separator "cljs_base.js")]}
+      modules)))
 
 (defn modules->module-graph [modules]
   (let [ret {:cljs-base []}]
@@ -1128,6 +1126,36 @@
       (fn [ret k {:keys [depends-on] :or {depends-on []}}]
         (assoc ret k (into [:cljs-base] depends-on)))
       ret modules)))
+
+(comment
+  (def modules
+    '{:shared {:entries [shared.a shared.b]
+               :output-to "out/shared.js"}
+      :page1 {:entries [page1.a page1.b]
+              :depends-on [:shared]
+              :output-to "out/page1.js"}
+      :page2 {:entries [page2.a page2.b]
+              :depends-on [:shared]
+              :output-to "out/page2.js"}})
+
+  (def inputs
+    [{:provides ["cljs.core"]}
+     {:provides ["cljs.reader"]}
+     {:provides ["shared.a"]}
+     {:provides ["shared.b"]}
+     {:provides ["page1.a"]}
+     {:provides ["page1.b"]}
+     {:provides ["page2.a"]}
+     {:provides ["page2.b"]}])
+
+  (modules->module-uris modules inputs
+    {:optimizations :advanced
+     :output-dir "out"})
+
+  (modules->module-uris modules inputs
+    {:optimizations :none
+     :output-dir "out"})
+  )
 
 (defn build-modules
   "Given a list of IJavaScript sources in dependency order and compiler options

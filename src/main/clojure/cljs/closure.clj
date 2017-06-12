@@ -1109,7 +1109,7 @@
                source)))
          sources)})))
 
-(defn modules->module-uris [modules sources {:keys [optimizations] :as opts}]
+(defn modules->module-uris [modules sources {:keys [optimizations asset-path] :as opts}]
   (case optimizations
     :none
     {}
@@ -1117,7 +1117,7 @@
     (reduce-kv
       (fn [ret k {:keys [output-to]}]
         (assoc ret k [output-to]))
-      {:cljs-base [(str (util/output-directory opts) File/separator "cljs_base.js")]}
+      {:cljs-base [(str asset-path "/cljs_base.js")]}
       modules)))
 
 (defn modules->module-infos [modules]

@@ -1089,7 +1089,8 @@
         :depends-on #{:core}}}))
   )
 
-(defn find-entries [sources entry]
+(defn find-sources-for-module-entry
+  [entry sources]
   (let [m  (name (comp/munge entry))
         xs (string/split m #"\.")]
     (if (= "_STAR_" (last xs))
@@ -1109,18 +1110,49 @@
                source)))
          sources)})))
 
-(defn modules->module-uris [modules sources {:keys [optimizations asset-path] :as opts}]
-  (case optimizations
-    :none
-    {}
-    :advanced
-    (reduce-kv
-      (fn [ret k {:keys [output-to]}]
-        (assoc ret k [output-to]))
-      {:cljs-base [(str asset-path "/cljs_base.js")]}
-      modules)))
+(defn modules->module-uris
+  "Given a :module maps, a list of compiled JS sources, and compiler options
+   return a Closure module uris map."
+  [modules js-sources {:keys [optimizations asset-path] :as opts}]
+  (letfn [(get-uri [rel-path]
+            (string/join "/" [asset-path rel-path]))
+          (get-rel-path* [output-dir resource]
+            (string/replace (util/path resource) output-dir ""))]
+    (let [get-rel-path (partial get-rel-path*
+                         (-> (io/file (:output-dir opts))
+                           .getAbsoluteFile .getPath))]
+      (case optimizations
+        :none
+        (let [[module-uris js-sources']
+              (reduce-kv
+                (fn [[module-uris sources] module-name {:keys [entries]}]
+                  (reduce
+                    (fn [[module-uris sources] entry]
+                      (let [entry-sources (find-sources-for-module-entry entry sources)
+                            sources' (remove entry-sources sources)]
+                        [(update-in module-uris [module-name] (fnil into [])
+                           (map (comp get-uri get-rel-path) entry-sources))
+                         sources']))
+                    [module-uris sources] entries))
+                [{} js-sources] modules)]
+          (reduce
+            (fn [ret js-source]
+              (update-in ret [:cljs-base] (fnil conj [])
+                (-> js-source get-rel-path get-uri)))
+            module-uris js-sources'))
+        :advanced
+        (reduce-kv
+          (fn [ret k {:keys [output-to]}]
+            (assoc ret k [(get-uri (.getName (io/file output-to)))]))
+          {:cljs-base [(get-uri
+                         (or (get-in modules [:cljs-base :output-to])
+                              "/cljs_base.js"))]}
+          modules)))))
 
-(defn modules->module-infos [modules]
+(defn modules->module-infos
+  "Given a :modules map return a Closure module info map which maps modules
+   to depended upon modules."
+  [modules]
   (let [ret {:cljs-base []}]
     (reduce-kv
       (fn [ret k {:keys [depends-on] :or {depends-on []}}]
@@ -1179,7 +1211,7 @@
                   ;; as well as sources difference
                   (reduce
                     (fn [[sources ret] entry-sym]
-                      (if-let [entries (find-entries sources entry-sym)]
+                      (if-let [entries (find-sources-for-module-entry entry-sym sources)]
                         (do
                           (swap! used assoc entry-sym name)
                           [(remove entries sources) (into ret entries)])
@@ -1598,9 +1630,8 @@
         (subs path (+ (.lastIndexOf path lib-path) (.length lib-path)))))))
 
 (defn ^String rel-output-path
-  "Given an IJavaScript which is either in memory, in a jar file,
-  or is a foreign lib, return the path relative to the output
-  directory."
+  "Given a IJavaScript which points to a .js file either in memory, in a jar file,
+  or is a foreign lib, return the path relative to the output directory."
   ([js]
    (rel-output-path js
      (when env/*compiler*
